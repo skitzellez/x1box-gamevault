@@ -404,7 +404,7 @@ class GameLibraryActivity : AppCompatActivity() {
   }
 
   private fun hasAccessibleCoreFiles(): Boolean {
-    return isConfiguredFileAccessible("mcpxPath", "mcpxUri") &&
+    return (isConfiguredFileAccessible("mcpxPath", "mcpxUri") || FreeSystemFiles.isFreeBios(this, prefs)) &&
       isConfiguredFileAccessible("flashPath", "flashUri") &&
       isConfiguredFileAccessible("hddPath", "hddUri")
   }

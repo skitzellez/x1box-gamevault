@@ -30,6 +30,8 @@ val localCmakeArguments = listOf(
   "xemu.cargoHome" to "XEMU_CARGO_HOME",
   "xemu.rustupHome" to "XEMU_RUSTUP_HOME",
   "xemu.hostRustLinker" to "XEMU_HOST_RUST_LINKER",
+  "xemu.rustupToolchain" to "XISO_CONVERTER_RUSTUP_TOOLCHAIN",
+  "xemu.rustupToolchain" to "DSP56300_RUSTUP_TOOLCHAIN",
 ).mapNotNull { (propertyName, cmakeName) ->
   localProperties.getProperty(propertyName)
     ?.trim()
@@ -52,7 +54,8 @@ android {
   ndkVersion = "30.0.15729638"
 
   defaultConfig {
-    applicationId = "com.izzy2lost.x1box"
+    // Game Vault build: its own app id, so it installs next to the original X1 BOX
+    applicationId = "com.skitzelles.gamevault.xbox"
     /*
      * 29 (Android 10), not lower: below that the NDK toolchain falls back to
      * *emulated* TLS, which put __emutls_get_address in the hot path of every
@@ -61,8 +64,8 @@ android {
     minSdk = 29
     targetSdk = 36
 
-    versionCode = 31
-    versionName = "1.3.0"
+    versionCode = 3101
+    versionName = "1.3.0.1"
 
     ndk {
       abiFilters += listOf("arm64-v8a")

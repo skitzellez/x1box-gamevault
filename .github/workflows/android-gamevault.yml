@@ -1,0 +1,52 @@
+# Copyright (c) 2026 Skitzelles - part of Game Vault, https://github.com/skitzellez/xbox-game-vault
+# Licensed under the GNU GPL version 2 or (at your option) any later version, like the rest of xemu.
+#
+# Builds X1 BOX for Game Vault (unsigned release APK). The APK is signed afterwards on the
+# maintainer's PC, so no signing key is ever stored on GitHub.
+name: Android (Game Vault)
+
+on:
+  push:
+    branches: [gamevault]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK parts
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;30.0.15729638" "cmake;3.22.1" "build-tools;36.1.0" "platforms;android-36"
+
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3-pip
+          pip3 install --user --break-system-packages meson
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android --toolchain stable
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: x1box-gamevault-unsigned
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

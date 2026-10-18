@@ -10,16 +10,43 @@ import java.io.File
 class LauncherActivity : Activity() {
   companion object {
     private const val TAG = "LauncherActivity"
+    private const val KEY_HOLDING_LINK = "gv_holding_link"
+  }
+
+  /*
+   * Game Vault: a game link handed over for one play (not a folder the player
+   * picked here) is readable only while the screen that received it exists, so
+   * this screen stays behind the game and closes when the player comes back.
+   */
+  private var holdingLink = false
+
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    outState.putBoolean(KEY_HOLDING_LINK, holdingLink)
+  }
+
+  override fun onRestart() {
+    super.onRestart()
+    if (holdingLink) {
+      finish()
+    }
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    if (savedInstanceState?.getBoolean(KEY_HOLDING_LINK) == true) {
+      // recreated after the game: never start it a second time
+      finish()
+      return
+    }
     DebugLog.initialize(this)
     OrientationLocker(this).enable()
 
     /* Runs here, not only in Settings, so existing installs get it even if
      * the user never opens the settings screen. */
     SettingsActivity.applyDrawReorderOffMigration(this)
+    // Game Vault: free BIOS + blank hard disk when the player has none of their own
+    FreeSystemFiles.ensure(this)
 
     val prefs = getSharedPreferences("x1box_prefs", MODE_PRIVATE)
     var setupComplete = prefs.getBoolean("setup_complete", false)
@@ -40,7 +67,8 @@ class LauncherActivity : Activity() {
     val gamesFolderUri = gamesFolderUriStr?.let(Uri::parse)
     val frontendLaunch = FrontendLaunchHelper.resolve(this, intent, gamesFolderUri)
 
-    val hasMcpx = hasLocalFile(mcpxPath) || (mcpxUri != null && hasPersistedReadPermission(mcpxUri))
+    val hasMcpx = hasLocalFile(mcpxPath) || (mcpxUri != null && hasPersistedReadPermission(mcpxUri)) ||
+      FreeSystemFiles.isFreeBios(this, prefs)
     val hasFlash = hasLocalFile(flashPath) || (flashUri != null && hasPersistedReadPermission(flashUri))
     val hasHdd = hasLocalFile(hddPath) || (hddUri != null && hasPersistedReadPermission(hddUri))
     val hasDvd = hasLocalFile(dvdPath) || (dvdUri != null && hasPersistedReadPermission(dvdUri))
@@ -121,6 +149,13 @@ class LauncherActivity : Activity() {
 
       if (hasMcpx && hasFlash && hasHdd) {
         DebugLog.i(TAG) { "Frontend launch resolved via ${frontendLaunch.source}" }
+        val link = frontendLaunch.dvdUri
+        if (link != null && !hasPersistedReadPermission(link)) {
+          DebugLog.i(TAG) { "One-play game link: keeping it readable behind the game" }
+          holdingLink = true
+          startActivity(Intent(this, MainActivity::class.java))
+          return
+        }
         EmulationProcessHandoff.launch(this, Intent(this, MainActivity::class.java))
         return
       }
@@ -132,7 +167,8 @@ class LauncherActivity : Activity() {
       Toast.makeText(this, R.string.frontend_launch_unresolved, Toast.LENGTH_LONG).show()
     }
 
-    val needsSetup = !setupComplete || !hasMcpx || !hasFlash || !hasHdd || !hasGamesFolder
+    val needsSetup = !hasMcpx || !hasFlash || !hasHdd || !hasGamesFolder ||
+      (!setupComplete && !FreeSystemFiles.isFreeBios(this, prefs))
     val next = if (needsSetup) SetupWizardActivity::class.java else GameLibraryActivity::class.java
 
     startActivity(Intent(this, next))

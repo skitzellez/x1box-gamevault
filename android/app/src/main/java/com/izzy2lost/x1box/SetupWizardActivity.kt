@@ -165,7 +165,7 @@ class SetupWizardActivity : AppCompatActivity() {
     hddUri = prefs.getString("hddUri", null)?.let(Uri::parse)
     gamesFolderUri = prefs.getString("gamesFolderUri", null)?.let(Uri::parse)
 
-    val coreReady = isFileReady(mcpxPath) && isFileReady(flashPath) && isFileReady(hddPath)
+    val coreReady = mcpxReady() && isFileReady(flashPath) && isFileReady(hddPath)
     val gamesFolderReady = hasGamesFolderReady()
     if (prefs.getBoolean("setup_complete", false) && coreReady && gamesFolderReady) {
       goToLibrary()
@@ -274,20 +274,25 @@ class SetupWizardActivity : AppCompatActivity() {
     btnBack.isEnabled = true
     btnNext.isEnabled =
       when (currentStep) {
-        0 -> isFileReady(mcpxPath)
+        0 -> mcpxReady()
         1 -> isFileReady(flashPath)
         2 -> isFileReady(hddPath)
         else -> hasGamesFolderReady()
       }
   }
 
+  // the free BIOS (SpiritBoot) needs no MCPX ROM
+  private fun mcpxReady(): Boolean = isFileReady(mcpxPath) || FreeSystemFiles.isFreeBios(this, prefs)
+
   private fun updateMcpxSelection() {
-    val value = mcpxPath ?: mcpxUri?.toString() ?: getString(R.string.setup_not_set)
+    val value = mcpxPath ?: mcpxUri?.toString() ?:
+      getString(if (FreeSystemFiles.isFreeBios(this, prefs)) R.string.setup_free_bios else R.string.setup_not_set)
     mcpxPathText.text = getString(R.string.setup_mcpx_value, value)
   }
 
   private fun updateFlashSelection() {
-    val value = flashPath ?: flashUri?.toString() ?: getString(R.string.setup_not_set)
+    val value = if (FreeSystemFiles.isFreeBios(this, prefs)) getString(R.string.setup_free_bios)
+      else flashPath ?: flashUri?.toString() ?: getString(R.string.setup_not_set)
     flashPathText.text = getString(R.string.setup_flash_value, value)
   }
 
