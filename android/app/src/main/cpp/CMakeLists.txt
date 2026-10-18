@@ -288,6 +288,13 @@ endif()
 
 get_filename_component(NINJA_DIRECTORY "${NINJA_EXECUTABLE}" DIRECTORY)
 set(GLIB_BUILD_PATH "${NINJA_DIRECTORY}:$ENV{PATH}")
+# Game Vault: Windows hosts keep their own PATH (';'-separated, it cannot pass through a CMake list);
+# ninja must already be on it there.
+if(CMAKE_HOST_WIN32)
+  set(GLIB_ENV_COMMAND)
+else()
+  set(GLIB_ENV_COMMAND "${CMAKE_COMMAND}" -E env "PATH=${GLIB_BUILD_PATH}")
+endif()
 
 if(CMAKE_ANDROID_NDK)
   set(NDK_PATH "${CMAKE_ANDROID_NDK}")
@@ -316,7 +323,17 @@ if(NOT ANDROID_API)
 endif()
 
 set(ANDROID_TRIPLE "aarch64-none-linux-android${ANDROID_API}")
-set(NDK_TOOLCHAIN "${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin")
+# Game Vault: Windows hosts too (the NDK's tools there are .exe, its clang wrappers .cmd)
+if(CMAKE_HOST_WIN32)
+  set(NDK_HOST_TAG "windows-x86_64")
+  set(NDK_EXE_SUFFIX ".exe")
+  set(NDK_SCRIPT_SUFFIX ".cmd")
+else()
+  set(NDK_HOST_TAG "linux-x86_64")
+  set(NDK_EXE_SUFFIX "")
+  set(NDK_SCRIPT_SUFFIX "")
+endif()
+set(NDK_TOOLCHAIN "${NDK_PATH}/toolchains/llvm/prebuilt/${NDK_HOST_TAG}/bin")
 
 if(XEMU_XISO_CONVERTER_BUILD_ENABLED)
   if(CMAKE_HOST_WIN32)
@@ -355,9 +372,9 @@ if(XEMU_XISO_CONVERTER_BUILD_ENABLED)
     "${XISO_CONVERTER_RS_TARGET_DIR}/${XISO_CONVERTER_RS_TARGET}/release/libxiso_converter_rs.a"
   )
   set(XISO_CONVERTER_RS_LINKER
-    "${NDK_TOOLCHAIN}/aarch64-linux-android${ANDROID_API}-clang"
+    "${NDK_TOOLCHAIN}/aarch64-linux-android${ANDROID_API}-clang${NDK_SCRIPT_SUFFIX}"
   )
-  set(XISO_CONVERTER_RS_AR "${NDK_TOOLCHAIN}/llvm-ar")
+  set(XISO_CONVERTER_RS_AR "${NDK_TOOLCHAIN}/llvm-ar${NDK_EXE_SUFFIX}")
 
   file(GLOB_RECURSE XISO_CONVERTER_RS_SOURCES CONFIGURE_DEPENDS
     "${XISO_CONVERTER_RS_DIR}/src/*.rs"
@@ -473,9 +490,9 @@ set(DSP56300_RS_LIB
 )
 set(DSP56300_RS_INCLUDE_DIR "${DSP56300_RS_DIR}/include")
 set(DSP56300_RS_LINKER
-  "${NDK_TOOLCHAIN}/aarch64-linux-android${ANDROID_API}-clang"
+  "${NDK_TOOLCHAIN}/aarch64-linux-android${ANDROID_API}-clang${NDK_SCRIPT_SUFFIX}"
 )
-set(DSP56300_RS_AR "${NDK_TOOLCHAIN}/llvm-ar")
+set(DSP56300_RS_AR "${NDK_TOOLCHAIN}/llvm-ar${NDK_EXE_SUFFIX}")
 
 file(GLOB_RECURSE DSP56300_RS_SOURCES CONFIGURE_DEPENDS
   "${dsp56300_src_SOURCE_DIR}/Cargo.toml"
@@ -521,6 +538,15 @@ set(GLIB_VERSION "2.66.8")
 set(GLIB_SOURCE_DIR "${CMAKE_BINARY_DIR}/glib-src")
 set(GLIB_BUILD_DIR "${CMAKE_BINARY_DIR}/glib-build-android")
 set(GLIB_INSTALL_DIR "${CMAKE_BINARY_DIR}/glib-install-android")
+# Game Vault: meson calls "C:/..." not absolute for an Android host, so on Windows glib is
+# installed under "/" into GLIB_INSTALL_DIR as its destdir (same files, same place).
+if(CMAKE_HOST_WIN32)
+  set(GLIB_PREFIX "/")
+  set(GLIB_DESTDIR_ARGS --destdir "${GLIB_INSTALL_DIR}")
+else()
+  set(GLIB_PREFIX "${GLIB_INSTALL_DIR}")
+  set(GLIB_DESTDIR_ARGS)
+endif()
 set(GLIB_CROSS_FILE "${CMAKE_BINARY_DIR}/glib-android-cross.txt")
 set(ICONV_STUB_DIR "${CMAKE_BINARY_DIR}/iconv-stub")
 
@@ -543,14 +569,14 @@ file(WRITE "${GLIB_CROSS_FILE}"
 "endian = 'little'\n"
 "\n"
 "[binaries]\n"
-"c = '${NDK_TOOLCHAIN}/clang'\n"
-"cpp = '${NDK_TOOLCHAIN}/clang++'\n"
-"ar = '${NDK_TOOLCHAIN}/llvm-ar'\n"
-"strip = '${NDK_TOOLCHAIN}/llvm-strip'\n"
+"c = '${NDK_TOOLCHAIN}/clang${NDK_EXE_SUFFIX}'\n"
+"cpp = '${NDK_TOOLCHAIN}/clang++${NDK_EXE_SUFFIX}'\n"
+"ar = '${NDK_TOOLCHAIN}/llvm-ar${NDK_EXE_SUFFIX}'\n"
+"strip = '${NDK_TOOLCHAIN}/llvm-strip${NDK_EXE_SUFFIX}'\n"
 "\n"
 "[properties]\n"
 "needs_exe_wrapper = true\n"
-"sys_root = '${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot'\n"
+"sys_root = '${NDK_PATH}/toolchains/llvm/prebuilt/${NDK_HOST_TAG}/sysroot'\n"
 "c_args = ['--target=${ANDROID_TRIPLE}', '-I${CMAKE_CURRENT_LIST_DIR}/iconv_stub']\n"
 "cpp_args = ['--target=${ANDROID_TRIPLE}', '-I${CMAKE_CURRENT_LIST_DIR}/iconv_stub']\n"
 "c_link_args = ['--target=${ANDROID_TRIPLE}', '-L${ICONV_STUB_DIR}', '-liconv']\n"
@@ -566,10 +592,10 @@ ExternalProject_Add(glib_ep
   PATCH_COMMAND
     "${CMAKE_COMMAND}" -DGLIB_SOURCE_DIR="${GLIB_SOURCE_DIR}" -P "${CMAKE_CURRENT_LIST_DIR}/patch_glib.cmake"
   CONFIGURE_COMMAND
-    "${CMAKE_COMMAND}" -E env "PATH=${GLIB_BUILD_PATH}"
+    ${GLIB_ENV_COMMAND}
     "${MESON_EXECUTABLE}" setup "${GLIB_BUILD_DIR}" "${GLIB_SOURCE_DIR}"
     --cross-file "${GLIB_CROSS_FILE}"
-    --prefix "${GLIB_INSTALL_DIR}"
+    --prefix "${GLIB_PREFIX}"
     --buildtype "release"
     --default-library "static"
     -Dgtk_doc=false
@@ -583,8 +609,8 @@ ExternalProject_Add(glib_ep
     -Dinstalled_tests=false
   BUILD_COMMAND "${NINJA_EXECUTABLE}" -C "${GLIB_BUILD_DIR}" -j 1
   INSTALL_COMMAND
-    "${CMAKE_COMMAND}" -E env "PATH=${GLIB_BUILD_PATH}"
-    "${MESON_EXECUTABLE}" install -C "${GLIB_BUILD_DIR}"
+    ${GLIB_ENV_COMMAND}
+    "${MESON_EXECUTABLE}" install -C "${GLIB_BUILD_DIR}" ${GLIB_DESTDIR_ARGS}
   BUILD_BYPRODUCTS
     "${GLIB_INSTALL_DIR}/lib/libglib-2.0.a"
     "${GLIB_INSTALL_DIR}/lib/libgobject-2.0.a"
